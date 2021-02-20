@@ -8,7 +8,8 @@ from torchblocks.utils import seed_everything, dict_to_text, build_argparse
 from torchblocks.utils import prepare_device, get_checkpoints
 from model.modeling_nezha import NeZhaForSequenceClassification
 from model.configuration_nezha import NeZhaConfig
-from transformers import BertForSequenceClassification, BertConfig, BertTokenizer, WEIGHTS_NAME
+from transformers import BertForSequenceClassification, BertConfig, BertTokenizer, WEIGHTS_NAME, RobertaConfig, \
+    RobertaForSequenceClassification, RobertaTokenizer
 from torchblocks.processor import TextClassifierProcessor, InputExample
 
 
@@ -42,9 +43,11 @@ class CommonDataProcessor(TextClassifierProcessor):
                 InputExample(guid=guid, texts=[text_a, text_b], label=label))
         return examples
 
+
 MODEL_CLASSES = {
     'nezha': (NeZhaConfig, NeZhaForSequenceClassification, BertTokenizer),
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer)
+    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
+    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer)
 }
 
 
@@ -123,6 +126,7 @@ def main():
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
             trainer.predict(model, test_dataset=test_dataset, prefix=str(global_step))
+
 
 if __name__ == "__main__":
     main()
