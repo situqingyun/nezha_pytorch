@@ -2,7 +2,7 @@ CURRENT_DIR=`pwd`
 export MODEL_DIR=$CURRENT_DIR/pretrained_models/nezha-cn-base
 export DATA_DIR=$CURRENT_DIR/dataset
 export OUTPUR_DIR=$CURRENT_DIR/outputs
-export TASK_NAME=bmes
+export TASK_NAME=websentiment
 
 #-----------training-----------------
 python task_text_classification_chnsenti.py \
@@ -25,3 +25,8 @@ python task_text_classification_chnsenti.py \
   --overwrite_output_dir \
   --seed=42
 
+#python task_text_classification_chnsenti.py --model_type=bert --model_path=bert-base-uncased
+#--task_name=ABSA --do_train --do_predict --gpu=0 --monitor=eval_acc
+#--data_dir=dataset/ --train_max_seq_length=128 --eval_max_seq_length=128
+#--per_gpu_train_batch_size=16 --per_gpu_eval_batch_size=32 --learning_rate=3e-5
+#--num_train_epochs=10.0 --logging_steps=-1 --save_steps=-1 --output_dir=output/output/ --overwrite_output_dir --seed=42
