@@ -11,6 +11,7 @@ from model.configuration_nezha import NeZhaConfig
 from transformers import BertForSequenceClassification, BertConfig, BertTokenizer, WEIGHTS_NAME, RobertaConfig, \
     RobertaForSequenceClassification, RobertaTokenizer
 from torchblocks.processor import TextClassifierProcessor, InputExample
+from torchblocks.trainer.classifier_trainer import FreelbTrainer
 
 
 class CommonDataProcessor(TextClassifierProcessor):
@@ -39,6 +40,8 @@ class CommonDataProcessor(TextClassifierProcessor):
             text_b = None
             if 'test' != set_type:
                 label = line[1]
+            else:
+                label = None
             examples.append(
                 InputExample(guid=guid, texts=[text_a, text_b], label=label))
         return examples
@@ -52,7 +55,17 @@ MODEL_CLASSES = {
 
 
 def main():
-    args = build_argparse().parse_args()
+    # args = build_argparse().parse_args()
+    parser = build_argparse()
+    parser.add_argument('--adv_lr', type=float, default=1e-2)
+    parser.add_argument('--adv_K', type=int, default=3, help="should be at least 1")
+    parser.add_argument('--adv_init_mag', type=float, default=2e-2)
+    parser.add_argument('--adv_norm_type', type=str, default="l2", choices=["l2", "linf"])
+    parser.add_argument('--adv_max_norm', type=float, default=0, help="set to 0 to be unlimited")
+    parser.add_argument('--base_model', default='bert')
+    parser.add_argument('--hidden_dropout_prob', type=float, default=0.1)
+    parser.add_argument('--attention_probs_dropout_prob', type=float, default=0)
+    args = parser.parse_args()
     if args.model_path is None:
         args.model_path = args.model_name
     if args.model_name is None:
@@ -89,15 +102,17 @@ def main():
 
     # trainer
     logger.info("initializing traniner")
-    trainer = TextClassifierTrainer(logger=logger, args=args, collate_fn=processor.collate_fn,
-                                    input_keys=processor.get_input_keys(),
-                                    metrics=[Accuracy()])
+    trainer = FreelbTrainer(logger=logger, args=args, collate_fn=processor.collate_fn,
+                            input_keys=processor.get_input_keys(),
+                            metrics=[Accuracy()])
     # do train
     if args.do_train:
         train_dataset = processor.create_dataset(args.train_max_seq_length, 'train.csv', 'train')
         eval_dataset = processor.create_dataset(args.eval_max_seq_length, 'dev.csv', 'dev')
         trainer.train(model, train_dataset=train_dataset, eval_dataset=eval_dataset)
     # do eval
+    checkpoint_numbers = list()
+    loss_list = list()
     if args.do_eval and args.local_rank in [-1, 0]:
         results = {}
         eval_dataset = processor.create_dataset(args.eval_max_seq_length, 'dev.csv', 'dev')
@@ -113,14 +128,29 @@ def main():
             if global_step:
                 result = {"{}_{}".format(global_step, k): v for k, v in trainer.records['result'].items()}
                 results.update(result)
+            # 筛选出最好的三个
+            loss_list.append(trainer.records['result']['eval_loss'])
+
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         dict_to_text(output_eval_file, results)
+
+        if len(loss_list)>3:
+            sorted_loss_list = loss_list.sort()[:3]
+            for i, k in enumerate(loss_list):
+                if k in sorted_loss_list:
+                    checkpoint_numbers.append(k)
+        else:
+            checkpoint_numbers = [i for i in range(len(loss_list))]
     # do predict
     if args.do_predict:
         test_dataset = processor.create_dataset(args.eval_max_seq_length, 'test.csv', 'test')
-        if args.checkpoint_number == 0:
-            raise ValueError("checkpoint number should > 0,but get %d", args.checkpoint_number)
-        checkpoints = get_checkpoints(args.output_dir, args.checkpoint_number, WEIGHTS_NAME)
+        if args.checkpoint_number != 0:
+            checkpoints = get_checkpoints(args.output_dir, args.checkpoint_number, WEIGHTS_NAME)
+        else:
+            checkpoints = list()
+            for i in checkpoint_numbers:
+                checkpoints.extend(get_checkpoints(args.output_dir, i, WEIGHTS_NAME))
+
         for checkpoint in checkpoints:
             global_step = checkpoint.split("/")[-1].split("-")[-1]
             model = model_class.from_pretrained(checkpoint)
